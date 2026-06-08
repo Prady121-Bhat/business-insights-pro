@@ -1,0 +1,76 @@
+version: '3.9'
+
+# Development override — hot reload, exposed ports, no Nginx
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: bip_mongo_dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data_dev:/data/db
+    networks:
+      - bip_dev
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder
+    container_name: bip_backend_dev
+    command: npm run dev
+    volumes:
+      - ./backend/src:/app/src
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: development
+      MONGO_URI: mongodb://mongo:27017/business_insights_pro_dev
+      ANALYTICS_SERVICE_URL: http://analytics:8001
+    ports:
+      - "5000:5000"
+    networks:
+      - bip_dev
+    depends_on:
+      - mongo
+      - analytics
+
+  analytics:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: bip_analytics_dev
+    volumes:
+      - ./analytics-service:/app
+    env_file:
+      - ./analytics-service/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+    ports:
+      - "8001:8001"
+    networks:
+      - bip_dev
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+
+  frontend:
+    image: node:20-alpine
+    container_name: bip_frontend_dev
+    working_dir: /app
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:5000/api/v1
+    ports:
+      - "3000:5173"
+    networks:
+      - bip_dev
+
+volumes:
+  mongo_data_dev:
+
+networks:
+  bip_dev:
+    driver: bridge

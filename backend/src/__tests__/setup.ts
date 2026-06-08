@@ -1,0 +1,10 @@
+process.env.NODE_ENV = 'test';
+process.env.MONGO_URI = 'mongodb://localhost:27017/bip_test';
+process.env.JWT_ACCESS_SECRET = 'test_access_secret_minimum_64_characters_xxxxxxxxxxxxxxxxxxxxxxxxx';
+process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_minimum_64_characters_xxxxxxxxxxxxxxxxxxxxxxxxx';
+process.env.JWT_ACCESS_EXPIRES = '15m';
+process.env.JWT_REFRESH_EXPIRES = '7d';
+process.env.ANALYTICS_SERVICE_URL = 'http://localhost:8001';
+process.env.ANALYTICS_SERVICE_KEY = 'test-key';
+process.env.SMTP_USER = '';
+process.env.SMTP_PASS = '';

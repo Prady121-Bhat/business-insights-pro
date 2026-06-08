@@ -1,0 +1,132 @@
+version: '3.9'
+
+services:
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: bip_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASS:-changeme}
+      MONGO_INITDB_DATABASE: business_insights_pro
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    ports:
+      - "27017:27017"
+    networks:
+      - bip_internal
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Backend (Node.js/Express) ──────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bip_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASS:-changeme}@mongo:27017/business_insights_pro?authSource=admin
+      ANALYTICS_SERVICE_URL: http://analytics:8001
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - bip_internal
+    depends_on:
+      mongo:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Python Analytics Service ───────────────────────────────────────────────
+  analytics:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: bip_analytics
+    restart: unless-stopped
+    env_file:
+      - ./analytics-service/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+    networks:
+      - bip_internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend (React + Nginx) ───────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: bip_frontend
+    restart: unless-stopped
+    networks:
+      - bip_internal
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Nginx Reverse Proxy ────────────────────────────────────────────────────
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: bip_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - bip_internal
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mongo_data:
+    driver: local
+  mongo_config:
+    driver: local
+  uploads_data:
+    driver: local
+
+networks:
+  bip_internal:
+    driver: bridge
